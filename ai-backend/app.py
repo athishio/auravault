@@ -198,6 +198,8 @@ def chat():
     except Exception as e:
         return jsonify({"reply": f"API Error: {str(e)}"}), 500
 
+from werkzeug.utils import secure_filename
+
 @app.route('/api/upload', methods=['POST'])
 def upload_statement():
     if 'file' not in request.files:
@@ -209,9 +211,29 @@ def upload_statement():
     if file.filename == '':
         return jsonify({"error": "Missing file"}), 400
 
+    filename = secure_filename(file.filename)
+    if not filename:
+        return jsonify({"error": "Invalid filename"}), 400
+
+    # Reject the upload if the extension isn't one of .pdf, .csv, .txt
+    allowed_extensions = {'.pdf', '.csv', '.txt'}
+    _, ext = os.path.splitext(filename.lower())
+    if ext not in allowed_extensions:
+        return jsonify({"error": "Invalid file extension. Only .pdf, .csv, and .txt are allowed"}), 400
+
+    # Add a max file size check (10MB) before saving
+    try:
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)
+        if file_size > 10 * 1024 * 1024:
+            return jsonify({"error": "File size exceeds 10MB limit"}), 400
+    except Exception as e:
+        return jsonify({"error": f"Failed to check file size: {str(e)}"}), 400
+
     try:
         temp_dir = tempfile.gettempdir()
-        filepath = os.path.join(temp_dir, file.filename)
+        filepath = os.path.join(temp_dir, filename)
         file.save(filepath)
         
         extracted_text = ""
