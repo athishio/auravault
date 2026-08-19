@@ -14,8 +14,14 @@ import pdfplumber
 from dotenv import load_dotenv
 load_dotenv()
 
+allowed_origins_env = os.getenv("ALLOWED_ORIGIN")
+if allowed_origins_env:
+    allowed_origins = [orig.strip() for orig in allowed_origins_env.split(",") if orig.strip()]
+else:
+    allowed_origins = ["https://auravault-ai.vercel.app", "http://localhost:3000"]
+
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": allowed_origins}})
 
 genai.configure(api_key=os.getenv("API_KEY"))
 
