@@ -2,6 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { MessageCircle, X, Send, Mic, MicOff, Loader2, Trash2 } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://auravault-ai.onrender.com";
 
 type Message = { role: string; content: string };
 
@@ -21,7 +24,7 @@ const formatMessage = (text: string) => {
 };
 
 export function ChatWidget() {
-  const MOCK_USER_ID = "hackathon_admin";
+  const { isLoaded, userId, getToken } = useAuth();
 
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([DEFAULT_MESSAGE]);
@@ -165,21 +168,22 @@ export function ChatWidget() {
     setIsLoading(true);
 
     try {
-      const userId = MOCK_USER_ID; 
+      const token = await getToken();
       const userCurrencyKey = `auraVault_${userId}_currency`;
       const userCurrencyCode = localStorage.getItem(userCurrencyKey) || localStorage.getItem("auraVault_currency") || "usd";
       
-      const response = await fetch("https://auravault-ai.onrender.com/api/chat", {
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           message: userText,
-          userId: userId,
           currency_code: userCurrencyCode, 
           history: messages.length > 1 ? messages.slice(1) : [] 
         }),
       });
-
       const data = await response.json();
       const messagesWithAI = [...messagesWithUser, { role: "ai", content: data.reply || "Error." }];
       setMessages(messagesWithAI);

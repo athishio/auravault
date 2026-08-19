@@ -2,40 +2,75 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Upload, Loader2, Trash2 } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://auravault-ai.onrender.com";
 
 export function TransactionsView() {
-  const MOCK_USER_ID = "hackathon_admin";
+  const { isLoaded, userId, getToken } = useAuth();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchTransactions = () => {
-    fetch(`https://auravault-ai.onrender.com/api/transactions?userId=${MOCK_USER_ID}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!Array.isArray(data)) {
-          console.error("Backend Error! Expected an array but got:", data);
-          setTransactions([]); 
-          setLoading(false);
-          return;
-        }
+  useEffect(() => {
+    console.log("TransactionsView Config & Auth:", {
+      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+      API_BASE,
+      isLoaded,
+      userId
+    });
+  }, [isLoaded, userId]);
 
-        const sortedData = data.sort((a: any, b: any) => 
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
-        setTransactions(sortedData);
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Failed to fetch from backend:", error);
-        setLoading(false);
+  const fetchTransactions = async () => {
+    try {
+      console.log("TransactionsView: Fetching transactions from", `${API_BASE}/api/transactions`);
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Unable to retrieve security token from Clerk.");
+      }
+
+      const res = await fetch(`${API_BASE}/api/transactions`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server responded with status ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (!Array.isArray(data)) {
+        throw new Error("Expected a JSON array of transactions from the server.");
+      }
+
+      const sortedData = data.sort((a: any, b: any) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      setTransactions(sortedData);
+      setLoading(false);
+    } catch (error: any) {
+      console.error("Failed to fetch from backend:", error);
+      setAuthError(error?.message || "Failed to fetch from backend.");
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
+    if (!isLoaded) return;
+
+    if (!userId) {
+      console.error("TransactionsView: Clerk finished loading, but no authenticated userId was found!");
+      setAuthError("No authenticated Clerk session found. Please sign in.");
+      setLoading(false);
+      return;
+    }
+
     fetchTransactions();
-  }, []);
+  }, [isLoaded, userId]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -44,18 +79,21 @@ export function TransactionsView() {
     setIsUploading(true);
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("userId", MOCK_USER_ID);
     
     try {
-      const response = await fetch("https://auravault-ai.onrender.com/api/upload", {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE}/api/upload`, {
         method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        },
         body: formData,
       });
       
       if (!response.ok) throw new Error("Upload failed");
       
       const result = await response.json();
-      fetchTransactions();
+      await fetchTransactions();
       window.dispatchEvent(new Event("searchTransactions"));
       window.dispatchEvent(new Event("notificationsUpdated"));
       
@@ -74,8 +112,12 @@ export function TransactionsView() {
     if (!confirm("WARNING: Are you sure you want to permanently delete ALL transactions? This cannot be undone!")) return;
 
     try {
-      await fetch(`https://auravault-ai.onrender.com/api/transactions/all?userId=${MOCK_USER_ID}`, {
+      const token = await getToken();
+      await fetch(`${API_BASE}/api/transactions/all`, {
         method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
       });
       
       setTransactions([]);
@@ -89,10 +131,14 @@ export function TransactionsView() {
   
   const handleDelete = async (id: string) => {
     try {
-      await fetch(`https://auravault-ai.onrender.com/api/transactions/${id}`, {
+      const token = await getToken();
+      await fetch(`${API_BASE}/api/transactions/${id}`, {
         method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
       });
-      fetchTransactions();
+      await fetchTransactions();
       window.dispatchEvent(new Event("searchTransactions"));
       window.dispatchEvent(new Event("notificationsUpdated"));
     } catch (error) {
@@ -138,7 +184,14 @@ export function TransactionsView() {
         </div>
       </div>
       
-      {loading ? (
+      {authError ? (
+        <div className="p-8 text-center text-red-500 border border-red-500/20 rounded-lg bg-red-500/5">
+          <p className="font-semibold">{authError}</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Make sure your local environment has `NEXT_PUBLIC_API_URL` set correctly to `http://localhost:5000` in `.env.local` and that you are signed in.
+          </p>
+        </div>
+      ) : loading ? (
         <div className="p-8 text-center text-muted-foreground animate-pulse border border-sidebar-border rounded-lg bg-sidebar">
           Syncing full ledger with AuraVault Secure Servers...
         </div>

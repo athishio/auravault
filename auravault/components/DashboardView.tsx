@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { BalanceCard } from "@/components/dashboard/balance-card";
 import { ExpensesChart } from "@/components/dashboard/expenses-chart";
 import { TransactionsList } from "@/components/dashboard/transactions-list";
@@ -8,12 +9,14 @@ import { SpendingBreakdown } from "@/components/dashboard/spending-breakdown";
 import { ChatWidget } from "@/components/dashboard/chat-widget"; 
 import { Plus, Loader2 } from "lucide-react";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://auravault-ai.onrender.com";
+
 export function DashboardView() {
-  // BYPASS CLERK: Hardcoded ID to match our Python backend
-  const MOCK_USER_ID = "hackathon_admin";
+  const { isLoaded, userId, getToken } = useAuth();
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [baseCreditLimit, setBaseCreditLimit] = useState(50000);
   const [currency, setCurrency] = useState({ symbol: "₹", locale: "en-IN" });
   const [searchQuery, setSearchQuery] = useState("");
@@ -23,36 +26,65 @@ export function DashboardView() {
   const [savingsSource, setSavingsSource] = useState("balance");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchData = () => {
-    // BYPASS CLERK: Use MOCK_USER_ID
-    fetch(`https://auravault-ai.onrender.com/api/transactions?userId=${MOCK_USER_ID}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!Array.isArray(data)) {
-          console.error("Backend Error! Expected an array but got:", data);
-          setTransactions([]); 
-          setLoading(false);
-          return;
-        }
+  useEffect(() => {
+    console.log("DashboardView Config & Auth:", {
+      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+      API_BASE,
+      isLoaded,
+      userId
+    });
+  }, [isLoaded, userId]);
 
-        const sortedData = data.sort((a: any, b: any) => 
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
-        setTransactions(sortedData);
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Failed to fetch:", error);
-        setLoading(false);
+  const fetchData = async () => {
+    try {
+      console.log("DashboardView: Fetching transactions from", `${API_BASE}/api/transactions`);
+      const token = await getToken();
+      if (!token) {
+        throw new Error("Unable to retrieve security token from Clerk.");
+      }
+
+      const res = await fetch(`${API_BASE}/api/transactions`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
       });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server responded with status ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (!Array.isArray(data)) {
+        throw new Error("Expected a JSON array of transactions from the server.");
+      }
+
+      const sortedData = data.sort((a: any, b: any) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      setTransactions(sortedData);
+      setLoading(false);
+    } catch (error: any) {
+      console.error("DashboardView fetch error:", error);
+      setAuthError(error?.message || "Failed to load secure vault data.");
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    // BYPASS CLERK: Removed the isLoaded check so it fetches immediately
-    const savedLimit = localStorage.getItem(`auraVault_${MOCK_USER_ID}_creditLimit`);
+    if (!isLoaded) return;
+
+    if (!userId) {
+      console.error("DashboardView: Clerk finished loading, but no authenticated userId was found!");
+      setAuthError("No authenticated Clerk session found. Please sign in.");
+      setLoading(false);
+      return;
+    }
+
+    const savedLimit = localStorage.getItem(`auraVault_${userId}_creditLimit`);
     if (savedLimit) setBaseCreditLimit(parseFloat(savedLimit));
     
-    const savedCurrency = (localStorage.getItem(`auraVault_${MOCK_USER_ID}_currency`) || "inr").toLowerCase();
+    const savedCurrency = (localStorage.getItem(`auraVault_${userId}_currency`) || "inr").toLowerCase();
     if (savedCurrency === "usd") {
       setCurrency({ symbol: "$", locale: "en-US" });
     } else if (savedCurrency === "eur") {
@@ -71,7 +103,7 @@ export function DashboardView() {
     };
     window.addEventListener("searchTransactions", handleSearchEvent);
     return () => window.removeEventListener("searchTransactions", handleSearchEvent);
-  }, []);
+  }, [isLoaded, userId]);
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,11 +116,14 @@ export function DashboardView() {
         finalCategory = savingsSource === "balance" ? "Savings_Internal" : "Savings_External";
       }
 
-      await fetch("https://auravault-ai.onrender.com/api/transactions", {
+      const token = await getToken();
+      await fetch(`${API_BASE}/api/transactions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
-          userId: MOCK_USER_ID, // BYPASS CLERK: Use Mock ID
           name: newName,
           amount: newAmount,
           category: finalCategory
@@ -97,7 +132,7 @@ export function DashboardView() {
       
       setNewName("");
       setNewAmount("");
-      fetchData();
+      await fetchData();
       window.dispatchEvent(new Event("notificationsUpdated"));
       window.dispatchEvent(new Event("searchTransactions"));
     } catch (error) {
@@ -136,6 +171,17 @@ export function DashboardView() {
     (tx.name || "").toLowerCase().includes(safeSearchQuery) || 
     (tx.category || "").toLowerCase().includes(safeSearchQuery)
   );
+
+  if (authError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-red-500 mt-20 gap-4 p-8 border border-red-500/20 bg-red-500/5 rounded-xl max-w-xl mx-auto">
+        <p className="font-semibold text-lg">{authError}</p>
+        <p className="text-sm text-muted-foreground text-center">
+          Make sure your local environment has `NEXT_PUBLIC_API_URL` set correctly to `http://localhost:5000` in `.env.local` and that you are signed in.
+        </p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

@@ -10,6 +10,10 @@ from datetime import datetime
 from boto3.dynamodb.conditions import Attr
 import re
 import pdfplumber
+import jwt
+from jwt import PyJWKClient
+from functools import wraps
+from botocore.exceptions import ClientError
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -37,10 +41,62 @@ users_table = dynamodb.Table('Users')
 
 MOCK_USER_ID = "hackathon_admin"
 
+_jwk_client = None
+
+def get_jwk_client():
+    global _jwk_client
+    if _jwk_client is None:
+        jwks_url = os.getenv("CLERK_JWKS_URL")
+        if not jwks_url:
+            issuer = os.getenv("CLERK_JWT_ISSUER") or os.getenv("CLERK_ISSUER")
+            if issuer:
+                jwks_url = f"{issuer.rstrip('/')}/.well-known/jwks.json"
+        if not jwks_url:
+            raise ValueError("CLERK_JWKS_URL or CLERK_JWT_ISSUER / CLERK_ISSUER environment variable is not set")
+        _jwk_client = PyJWKClient(jwks_url)
+    return _jwk_client
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", None)
+        if not auth_header:
+            return jsonify({"error": "Authorization header is missing"}), 401
+            
+        parts = auth_header.split()
+        if parts[0].lower() != "bearer" or len(parts) != 2:
+            return jsonify({"error": "Authorization header must be Bearer token"}), 401
+            
+        token = parts[1]
+        try:
+            client = get_jwk_client()
+            signing_key = client.get_signing_key_from_jwt(token)
+            
+            issuer = os.getenv("CLERK_JWT_ISSUER") or os.getenv("CLERK_ISSUER")
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                issuer=issuer if issuer else None,
+                options={"verify_aud": False}
+            )
+            
+            user_id = payload.get("sub")
+            if not user_id:
+                return jsonify({"error": "Token payload missing 'sub' claim"}), 401
+                
+            request.user_id = user_id
+        except Exception as e:
+            return jsonify({"error": f"Invalid token: {str(e)}"}), 401
+            
+        return f(*args, **kwargs)
+    return decorated
+
 @app.route('/api/transactions', methods=['GET', 'POST'])
+@requires_auth
 def handle_transactions():
     if request.method == 'GET':
-        user_id = request.args.get('userId', MOCK_USER_ID)
+        user_id = request.user_id
         
         try:
             response = transactions_table.scan(
@@ -59,7 +115,7 @@ def handle_transactions():
             new_id = str(uuid.uuid4()) 
             transaction_item = {
                 'id': new_id,
-                'userId': MOCK_USER_ID,
+                'userId': request.user_id,
                 'name': data.get('name', 'Manual Entry'),
                 'amount': str(data.get('amount', 0)), 
                 'category': data.get('category', 'Other'),
@@ -72,8 +128,9 @@ def handle_transactions():
             return jsonify({"error": "Failed to save to AWS"}), 500
         
 @app.route('/api/transactions/all', methods=['DELETE'])
+@requires_auth
 def delete_all_transactions():
-    user_id = request.args.get('userId', MOCK_USER_ID)
+    user_id = request.user_id
         
     try:
         response = transactions_table.scan(FilterExpression=Attr('userId').eq(user_id))
@@ -86,17 +143,27 @@ def delete_all_transactions():
         return jsonify({"error": str(e)}), 500
     
 @app.route('/api/transactions/<transaction_id>', methods=['DELETE'])
+@requires_auth
 def delete_transaction(transaction_id):
+    user_id = request.user_id
     try:
-        transactions_table.delete_item(Key={'id': transaction_id})
+        transactions_table.delete_item(
+            Key={'id': transaction_id},
+            ConditionExpression=Attr('userId').eq(user_id)
+        )
         return jsonify({"message": "Transaction deleted successfully!"}), 200
-    except Exception as e:
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            return jsonify({"error": "Transaction not found or unauthorized"}), 404
         return jsonify({"error": "Failed to delete from database"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/settings', methods=['GET', 'POST'])
+@requires_auth
 def handle_settings():
     if request.method == 'GET':
-        user_id = request.args.get('userId', MOCK_USER_ID)
+        user_id = request.user_id
         try:
             response = users_table.get_item(Key={'userId': user_id})
             return jsonify(response.get('Item', {}))
@@ -107,7 +174,7 @@ def handle_settings():
         data = request.json
         try:
             item = {
-                'userId': MOCK_USER_ID,
+                'userId': request.user_id,
                 'currency': data.get('currency', 'INR'),
                 'monthlyBudget': str(data.get('monthlyBudget', 0)),
                 'theme': data.get('theme', 'dark'),
@@ -120,11 +187,12 @@ def handle_settings():
             return jsonify({"error": str(e)}), 500
 
 @app.route('/api/chat', methods=['POST'])
+@requires_auth
 def chat():
     data = request.json
     try:
         user_message = data.get("message", "")
-        user_id = data.get("userId", MOCK_USER_ID)
+        user_id = request.user_id
         history = data.get("history", []) 
 
         response = transactions_table.scan(FilterExpression=Attr('userId').eq(user_id))
@@ -207,12 +275,13 @@ def chat():
 from werkzeug.utils import secure_filename
 
 @app.route('/api/upload', methods=['POST'])
+@requires_auth
 def upload_statement():
     if 'file' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
         
     file = request.files['file']
-    user_id = request.form.get('userId', MOCK_USER_ID)
+    user_id = request.user_id
     
     if file.filename == '':
         return jsonify({"error": "Missing file"}), 400

@@ -8,11 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sun, Moon, Monitor, Bell, AlertCircle, CreditCard } from "lucide-react";
+import { useAuth, useUser } from "@clerk/nextjs";
 
 export function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const MOCK_USER_ID = "hackathon_admin";
+  const { isLoaded: isAuthLoaded, userId } = useAuth();
+  const { isLoaded: isUserLoaded, user } = useUser();
   const [creditLimit, setCreditLimit] = useState("50000");
   const [showLimitSuccess, setShowLimitSuccess] = useState(false);
   const [showProfileSuccess, setShowProfileSuccess] = useState(false);
@@ -30,32 +32,37 @@ export function SettingsPage() {
   useEffect(() => {
     setMounted(true);
     
-    const savedLimit = localStorage.getItem(`auraVault_${MOCK_USER_ID}_creditLimit`);
-    if (savedLimit) setCreditLimit(savedLimit);
+    if (isAuthLoaded && userId) {
+      const savedLimit = localStorage.getItem(`auraVault_${userId}_creditLimit`);
+      if (savedLimit) setCreditLimit(savedLimit);
 
-    const savedCurrency = localStorage.getItem(`auraVault_${MOCK_USER_ID}_currency`);
-    if (savedCurrency) setFormData({ currency: savedCurrency });
+      const savedCurrency = localStorage.getItem(`auraVault_${userId}_currency`);
+      if (savedCurrency) setFormData({ currency: savedCurrency });
 
-    const savedNotifs = localStorage.getItem(`auraVault_${MOCK_USER_ID}_notifications`);
-    if (savedNotifs) setNotifications(JSON.parse(savedNotifs));
-  }, []);
+      const savedNotifs = localStorage.getItem(`auraVault_${userId}_notifications`);
+      if (savedNotifs) setNotifications(JSON.parse(savedNotifs));
+    }
+  }, [isAuthLoaded, userId]);
 
   if (!mounted) return <div className="text-foreground p-8 animate-pulse">Loading secure settings...</div>;
 
   const handleSaveCreditLimit = () => {
-    localStorage.setItem(`auraVault_${MOCK_USER_ID}_creditLimit`, creditLimit);
+    if (!userId) return;
+    localStorage.setItem(`auraVault_${userId}_creditLimit`, creditLimit);
     setShowLimitSuccess(true);
     setTimeout(() => setShowLimitSuccess(false), 2000);
   };
 
   const handleSaveProfile = () => {
-    localStorage.setItem(`auraVault_${MOCK_USER_ID}_currency`, formData.currency);
+    if (!userId) return;
+    localStorage.setItem(`auraVault_${userId}_currency`, formData.currency);
     setShowProfileSuccess(true);
     setTimeout(() => setShowProfileSuccess(false), 2000);
   };
 
   const handleSaveNotifications = () => {
-    localStorage.setItem(`auraVault_${MOCK_USER_ID}_notifications`, JSON.stringify(notifications));
+    if (!userId) return;
+    localStorage.setItem(`auraVault_${userId}_notifications`, JSON.stringify(notifications));
     window.dispatchEvent(new Event("notificationsUpdated"));
     setShowNotifSuccess(true);
     setTimeout(() => setShowNotifSuccess(false), 2000);
@@ -116,10 +123,9 @@ export function SettingsPage() {
         <div className="space-y-5">
           <div>
             <label className="text-sm font-medium text-foreground block mb-2">Master Profile</label>
-            <Input disabled value="Athish M" className="w-full px-4 py-2 bg-muted text-muted-foreground font-medium" />
-            <p className="text-xs text-muted-foreground mt-1">Hackathon Admin Account (Global Vault Access)</p>
+            <Input disabled value={user?.fullName || "AuraVault User"} className="w-full px-4 py-2 bg-muted text-muted-foreground font-medium" />
+            <p className="text-xs text-muted-foreground mt-1">Authenticated Account (Personal Vault Access)</p>
           </div>
-
           <div>
             <label className="text-sm font-medium text-foreground block mb-2">Primary Currency</label>
             <div className="flex gap-3">

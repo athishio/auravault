@@ -4,30 +4,53 @@ import { Bell, Search, AlertCircle, TrendingDown, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { useAuth, UserButton } from "@clerk/nextjs";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://auravault-ai.onrender.com";
 
 export function Header({ currentTab = "Dashboard" }: { currentTab?: string }) {
+  const { isLoaded, userId, getToken } = useAuth();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
-  const MOCK_USER_ID = "hackathon_admin";
   const [activeNotifications, setActiveNotifications] = useState<any[]>([]);
   const [hasUnseen, setHasUnseen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
-
   const checkRealEvents = async () => {
     try {
-      // BYPASS CLERK: Using our mock ID
-      const res = await fetch(`https://auravault-ai.onrender.com/api/transactions?userId=${MOCK_USER_ID}`);
+      const token = await getToken();
+      if (!token) return;
+
+      const res = await fetch(`${API_BASE}/api/transactions`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Header notifications sync failed:", res.status, errData);
+        setAllTransactions([]);
+        setActiveNotifications([]);
+        return;
+      }
+
       const txData = await res.json();
+      if (!Array.isArray(txData)) {
+        console.error("Header: Expected transaction array but got:", txData);
+        setAllTransactions([]);
+        setActiveNotifications([]);
+        return;
+      }
 
       setAllTransactions(txData);
 
-      const limit = parseFloat(localStorage.getItem("auraVault_creditLimit") || "50000");
-      const prefs = JSON.parse(localStorage.getItem("auraVault_notifications") || '{"unusualSpending":true,"budgetWarnings":true}');
-      const dismissedAlerts = JSON.parse(localStorage.getItem("auraVault_dismissedAlerts") || "[]");
-      const seenAlerts = JSON.parse(localStorage.getItem("auraVault_seenAlerts") || "[]");
+      const limit = parseFloat(localStorage.getItem(`auraVault_${userId}_creditLimit`) || localStorage.getItem("auraVault_creditLimit") || "50000");
+      const prefs = JSON.parse(localStorage.getItem(`auraVault_${userId}_notifications`) || localStorage.getItem("auraVault_notifications") || '{"unusualSpending":true,"budgetWarnings":true}');
+      const dismissedAlerts = JSON.parse(localStorage.getItem(`auraVault_${userId}_dismissedAlerts`) || localStorage.getItem("auraVault_dismissedAlerts") || "[]");
+      const seenAlerts = JSON.parse(localStorage.getItem(`auraVault_${userId}_seenAlerts`) || localStorage.getItem("auraVault_seenAlerts") || "[]");
 
       let totalExpenses = 0;
       const potentialAlerts: any[] = [];
@@ -80,20 +103,21 @@ export function Header({ currentTab = "Dashboard" }: { currentTab?: string }) {
     const willOpen = !isNotificationsOpen;
     setIsNotificationsOpen(willOpen);
 
-    if (willOpen) {
+    if (willOpen && userId) {
       setHasUnseen(false);
-      const seenAlerts = JSON.parse(localStorage.getItem("auraVault_seenAlerts") || "[]");
+      const seenAlerts = JSON.parse(localStorage.getItem(`auraVault_${userId}_seenAlerts`) || localStorage.getItem("auraVault_seenAlerts") || "[]");
       const newlySeen = activeNotifications.map(a => a.id);
-      localStorage.setItem("auraVault_seenAlerts", JSON.stringify([...new Set([...seenAlerts, ...newlySeen])]));
+      localStorage.setItem(`auraVault_${userId}_seenAlerts`, JSON.stringify([...new Set([...seenAlerts, ...newlySeen])]));
     } else {
       checkRealEvents(); 
     }
   };
 
   const handleDismissAll = () => {
-    const dismissedAlerts = JSON.parse(localStorage.getItem("auraVault_dismissedAlerts") || "[]");
+    if (!userId) return;
+    const dismissedAlerts = JSON.parse(localStorage.getItem(`auraVault_${userId}_dismissedAlerts`) || localStorage.getItem("auraVault_dismissedAlerts") || "[]");
     const newlyDismissed = activeNotifications.map(a => a.id);
-    localStorage.setItem("auraVault_dismissedAlerts", JSON.stringify([...new Set([...dismissedAlerts, ...newlyDismissed])]));
+    localStorage.setItem(`auraVault_${userId}_dismissedAlerts`, JSON.stringify([...new Set([...dismissedAlerts, ...newlyDismissed])]));
     
     setActiveNotifications([]);
     setHasUnseen(false);
@@ -115,12 +139,14 @@ export function Header({ currentTab = "Dashboard" }: { currentTab?: string }) {
   };
 
   useEffect(() => {
-    checkRealEvents();
-    window.addEventListener("notificationsUpdated", checkRealEvents);
-    return () => {
-      window.removeEventListener("notificationsUpdated", checkRealEvents);
-    };
-  }, []); 
+    if (isLoaded && userId) {
+      checkRealEvents();
+      window.addEventListener("notificationsUpdated", checkRealEvents);
+      return () => {
+        window.removeEventListener("notificationsUpdated", checkRealEvents);
+      };
+    }
+  }, [isLoaded, userId]); 
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -251,14 +277,11 @@ export function Header({ currentTab = "Dashboard" }: { currentTab?: string }) {
           )}
         </div>
         <div className="flex items-center gap-3 pl-4 border-l border-border">
-          <div className="hidden md:block text-right">
-            <p className="text-sm font-medium text-foreground">
-              Athish M
-            </p>
-          </div>
-          <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
-            <User className="w-5 h-5" />
-          </div>
+          <UserButton showName appearance={{
+            elements: {
+              userButtonOuterIdentifier: "text-sm font-medium text-foreground",
+            }
+          }} />
         </div>
         
       </div>
