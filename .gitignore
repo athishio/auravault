@@ -1,2 +1,5 @@
 **/.env
 **/.env.local
+/real_two_user_verification.py
+/migrate_user.py
+/ai-backend/debug.log

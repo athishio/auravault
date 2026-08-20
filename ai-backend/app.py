@@ -7,7 +7,7 @@ import tempfile
 import json
 import os
 from datetime import datetime
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 import re
 import pdfplumber
 import jwt
@@ -41,6 +41,14 @@ users_table = dynamodb.Table('Users')
 
 MOCK_USER_ID = "hackathon_admin"
 
+def log_debug(msg):
+    try:
+        with open("debug.log", "a") as f:
+            f.write(f"{datetime.now().isoformat()} - {msg}\n")
+            f.flush()
+    except Exception:
+        pass
+
 _jwk_client = None
 
 def get_jwk_client():
@@ -61,10 +69,12 @@ def requires_auth(f):
     def decorated(*args, **kwargs):
         auth_header = request.headers.get("Authorization", None)
         if not auth_header:
+            log_debug("DEBUG AUTH: Authorization header is missing")
             return jsonify({"error": "Authorization header is missing"}), 401
             
         parts = auth_header.split()
         if parts[0].lower() != "bearer" or len(parts) != 2:
+            log_debug("DEBUG AUTH: Authorization header is malformed")
             return jsonify({"error": "Authorization header must be Bearer token"}), 401
             
         token = parts[1]
@@ -73,20 +83,36 @@ def requires_auth(f):
             signing_key = client.get_signing_key_from_jwt(token)
             
             issuer = os.getenv("CLERK_JWT_ISSUER") or os.getenv("CLERK_ISSUER")
+            log_debug(f"DEBUG AUTH: decoding token starting with {token[:15]}... issuer={issuer}")
+            
+            # Disable strict issuer check in PyJWT and check manually to support trailing slash differences
             payload = jwt.decode(
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
-                issuer=issuer if issuer else None,
-                options={"verify_aud": False}
+                options={"verify_aud": False, "verify_iss": False},
+                leeway=60
             )
             
+            # Manual issuer check normalized by stripping trailing slashes
+            iss = payload.get("iss")
+            if issuer:
+                expected_iss = issuer.rstrip("/")
+                actual_iss = iss.rstrip("/") if iss else None
+                if actual_iss != expected_iss:
+                    raise jwt.exceptions.InvalidIssuerError(f"Issuer mismatch: expected {expected_iss}, got {actual_iss}")
+
             user_id = payload.get("sub")
             if not user_id:
+                log_debug("DEBUG AUTH: Token payload missing 'sub' claim")
                 return jsonify({"error": "Token payload missing 'sub' claim"}), 401
                 
             request.user_id = user_id
+            log_debug(f"DEBUG AUTH: Success! user_id={user_id}")
         except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            log_debug(f"DEBUG AUTH ERROR: {str(e)}\nTraceback:\n{tb}")
             return jsonify({"error": f"Invalid token: {str(e)}"}), 401
             
         return f(*args, **kwargs)
@@ -97,16 +123,22 @@ def requires_auth(f):
 def handle_transactions():
     if request.method == 'GET':
         user_id = request.user_id
+        log_debug(f"DEBUG GET TRANSACTIONS: user_id={user_id}")
         
         try:
-            response = transactions_table.scan(
-                FilterExpression=Attr('userId').eq(user_id)
+            response = transactions_table.query(
+                IndexName='UserIndex',
+                KeyConditionExpression=Key('userId').eq(user_id)
             )
             items = response.get('Items', [])
+            log_debug(f"DEBUG GET TRANSACTIONS: retrieved {len(items)} items")
             for item in items:
                 item['amount'] = float(item.get('amount', 0))
             return jsonify(items)
         except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            log_debug(f"DEBUG GET TRANSACTIONS ERROR: {str(e)}\nTraceback:\n{tb}")
             return jsonify({"error": str(e)}), 500
             
     if request.method == 'POST':
@@ -133,7 +165,7 @@ def delete_all_transactions():
     user_id = request.user_id
         
     try:
-        response = transactions_table.scan(FilterExpression=Attr('userId').eq(user_id))
+        response = transactions_table.query(IndexName='UserIndex', KeyConditionExpression=Key('userId').eq(user_id))
         items = response.get('Items', [])
         with transactions_table.batch_writer() as batch:
             for item in items:
@@ -195,7 +227,7 @@ def chat():
         user_id = request.user_id
         history = data.get("history", []) 
 
-        response = transactions_table.scan(FilterExpression=Attr('userId').eq(user_id))
+        response = transactions_table.query(IndexName='UserIndex', KeyConditionExpression=Key('userId').eq(user_id))
         transactions = response.get('Items', [])
         
         raw_currency = str(data.get('currency_code', data.get('currency', 'inr'))).lower()
