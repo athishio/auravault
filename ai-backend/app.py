@@ -18,9 +18,9 @@ load_dotenv()
 
 allowed_origins_env = os.getenv("ALLOWED_ORIGIN")
 if allowed_origins_env:
-    allowed_origins = [orig.strip() for orig in allowed_origins_env.split(",") if orig.strip()]
+    allowed_origins = [orig.strip().rstrip("/") for orig in allowed_origins_env.split(",") if orig.strip()]
 else:
-    allowed_origins = ["https://auravault-ai.vercel.app", "http://localhost:3000"]
+    allowed_origins = ["https://auravault-ai.vercel.app", "https://auravault-two.vercel.app", "http://localhost:3000"]
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": allowed_origins}})
@@ -46,6 +46,16 @@ def log_debug(msg):
             f.flush()
     except Exception:
         pass
+
+# Log startup config
+api_secret_env = os.getenv("API_SECRET")
+masked_secret = f"{api_secret_env[:3]}...{api_secret_env[-3:]}" if api_secret_env and len(api_secret_env) > 6 else ("SET" if api_secret_env else "NOT SET")
+startup_msg_1 = f"STARTUP CONFIG: ALLOWED_ORIGIN={allowed_origins_env} -> parsed={allowed_origins}"
+startup_msg_2 = f"STARTUP CONFIG: API_SECRET={masked_secret}"
+print(startup_msg_1, flush=True)
+print(startup_msg_2, flush=True)
+log_debug(startup_msg_1)
+log_debug(startup_msg_2)
 
 FIXED_USER_ID = "primary_user"
 
