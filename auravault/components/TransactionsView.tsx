@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Upload, Loader2, Trash2 } from "lucide-react";
-import { useAuth } from "@clerk/nextjs";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://auravault-ai.onrender.com";
 
 export function TransactionsView() {
-  const { isLoaded, userId, getToken } = useAuth();
+  const userId = "primary_user";
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -15,25 +14,21 @@ export function TransactionsView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    console.log("TransactionsView Config & Auth:", {
+    console.log("TransactionsView Config:", {
       NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
       API_BASE,
-      isLoaded,
       userId
     });
-  }, [isLoaded, userId]);
+  }, []);
 
   const fetchTransactions = async () => {
     try {
       console.log("TransactionsView: Fetching transactions from", `${API_BASE}/api/transactions`);
-      const token = await getToken();
-      if (!token) {
-        throw new Error("Unable to retrieve security token from Clerk.");
-      }
+      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET || "";
 
       const res = await fetch(`${API_BASE}/api/transactions`, {
         headers: {
-          "Authorization": `Bearer ${token}`
+          "X-API-Secret": apiSecret
         }
       });
 
@@ -60,17 +55,8 @@ export function TransactionsView() {
   };
 
   useEffect(() => {
-    if (!isLoaded) return;
-
-    if (!userId) {
-      console.error("TransactionsView: Clerk finished loading, but no authenticated userId was found!");
-      setAuthError("No authenticated Clerk session found. Please sign in.");
-      setLoading(false);
-      return;
-    }
-
     fetchTransactions();
-  }, [isLoaded, userId]);
+  }, []);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -81,11 +67,11 @@ export function TransactionsView() {
     formData.append("file", file);
     
     try {
-      const token = await getToken();
+      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET || "";
       const response = await fetch(`${API_BASE}/api/upload`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${token}`
+          "X-API-Secret": apiSecret
         },
         body: formData,
       });
@@ -112,11 +98,11 @@ export function TransactionsView() {
     if (!confirm("WARNING: Are you sure you want to permanently delete ALL transactions? This cannot be undone!")) return;
 
     try {
-      const token = await getToken();
+      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET || "";
       await fetch(`${API_BASE}/api/transactions/all`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${token}`
+          "X-API-Secret": apiSecret
         }
       });
       
@@ -131,11 +117,11 @@ export function TransactionsView() {
   
   const handleDelete = async (id: string) => {
     try {
-      const token = await getToken();
+      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET || "";
       await fetch(`${API_BASE}/api/transactions/${id}`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${token}`
+          "X-API-Secret": apiSecret
         }
       });
       await fetchTransactions();

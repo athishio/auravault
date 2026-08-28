@@ -5,6 +5,3 @@ boto3
 python-dotenv
 pdfplumber
 gunicorn
-PyJWT
-cryptography
-requests

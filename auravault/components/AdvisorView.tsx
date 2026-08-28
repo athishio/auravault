@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Send, Mic, MicOff, Trash2, PlusCircle, MessageSquare, Pencil } from "lucide-react";
-import { useAuth } from "@clerk/nextjs";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://auravault-ai.onrender.com";
 
@@ -29,7 +28,7 @@ type Message = { role: string; content: string };
 type ChatSession = { id: string; title: string; messages: Message[]; updatedAt: number };
 
 export function AdvisorView() {
-  const { isLoaded, userId, getToken } = useAuth();
+  const userId = "primary_user";
 
   const [chats, setChats] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string>("");
@@ -237,7 +236,7 @@ export function AdvisorView() {
     setIsLoading(true);
 
     try {
-      const token = await getToken();
+      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET || "";
       const userCurrencyKey = `auraVault_${userId}_currency`;
       const userCurrencyCode = localStorage.getItem(userCurrencyKey) || localStorage.getItem("auraVault_currency") || "usd";
 
@@ -245,7 +244,7 @@ export function AdvisorView() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          "X-API-Secret": apiSecret
         },
         body: JSON.stringify({
           message: userText,

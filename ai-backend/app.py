@@ -10,8 +10,6 @@ from datetime import datetime
 from boto3.dynamodb.conditions import Attr, Key
 import re
 import pdfplumber
-import jwt
-from jwt import PyJWKClient
 from functools import wraps
 from botocore.exceptions import ClientError
 
@@ -49,72 +47,22 @@ def log_debug(msg):
     except Exception:
         pass
 
-_jwk_client = None
-
-def get_jwk_client():
-    global _jwk_client
-    if _jwk_client is None:
-        jwks_url = os.getenv("CLERK_JWKS_URL")
-        if not jwks_url:
-            issuer = os.getenv("CLERK_JWT_ISSUER") or os.getenv("CLERK_ISSUER")
-            if issuer:
-                jwks_url = f"{issuer.rstrip('/')}/.well-known/jwks.json"
-        if not jwks_url:
-            raise ValueError("CLERK_JWKS_URL or CLERK_JWT_ISSUER / CLERK_ISSUER environment variable is not set")
-        _jwk_client = PyJWKClient(jwks_url)
-    return _jwk_client
+FIXED_USER_ID = "primary_user"
 
 def requires_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", None)
-        if not auth_header:
-            log_debug("DEBUG AUTH: Authorization header is missing")
-            return jsonify({"error": "Authorization header is missing"}), 401
+        expected_secret = os.getenv("API_SECRET")
+        if not expected_secret:
+            log_debug("API_SECRET is not configured on the server")
+            return jsonify({"error": "API secret is not configured on the server"}), 401
             
-        parts = auth_header.split()
-        if parts[0].lower() != "bearer" or len(parts) != 2:
-            log_debug("DEBUG AUTH: Authorization header is malformed")
-            return jsonify({"error": "Authorization header must be Bearer token"}), 401
+        secret = request.headers.get("X-API-Secret")
+        if secret != expected_secret:
+            log_debug(f"Invalid X-API-Secret header received: {secret}")
+            return jsonify({"error": "Invalid API secret"}), 401
             
-        token = parts[1]
-        try:
-            client = get_jwk_client()
-            signing_key = client.get_signing_key_from_jwt(token)
-            
-            issuer = os.getenv("CLERK_JWT_ISSUER") or os.getenv("CLERK_ISSUER")
-            log_debug(f"DEBUG AUTH: decoding token starting with {token[:15]}... issuer={issuer}")
-            
-            # Disable strict issuer check in PyJWT and check manually to support trailing slash differences
-            payload = jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=["RS256"],
-                options={"verify_aud": False, "verify_iss": False},
-                leeway=60
-            )
-            
-            # Manual issuer check normalized by stripping trailing slashes
-            iss = payload.get("iss")
-            if issuer:
-                expected_iss = issuer.rstrip("/")
-                actual_iss = iss.rstrip("/") if iss else None
-                if actual_iss != expected_iss:
-                    raise jwt.exceptions.InvalidIssuerError(f"Issuer mismatch: expected {expected_iss}, got {actual_iss}")
-
-            user_id = payload.get("sub")
-            if not user_id:
-                log_debug("DEBUG AUTH: Token payload missing 'sub' claim")
-                return jsonify({"error": "Token payload missing 'sub' claim"}), 401
-                
-            request.user_id = user_id
-            log_debug(f"DEBUG AUTH: Success! user_id={user_id}")
-        except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            log_debug(f"DEBUG AUTH ERROR: {str(e)}\nTraceback:\n{tb}")
-            return jsonify({"error": f"Invalid token: {str(e)}"}), 401
-            
+        request.user_id = FIXED_USER_ID
         return f(*args, **kwargs)
     return decorated
 

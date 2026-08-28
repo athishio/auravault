@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@clerk/nextjs";
 import { BalanceCard } from "@/components/dashboard/balance-card";
 import { ExpensesChart } from "@/components/dashboard/expenses-chart";
 import { TransactionsList } from "@/components/dashboard/transactions-list";
@@ -12,7 +11,7 @@ import { Plus, Loader2 } from "lucide-react";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://auravault-ai.onrender.com";
 
 export function DashboardView() {
-  const { isLoaded, userId, getToken } = useAuth();
+  const userId = "primary_user";
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,25 +26,21 @@ export function DashboardView() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    console.log("DashboardView Config & Auth:", {
+    console.log("DashboardView Config:", {
       NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
       API_BASE,
-      isLoaded,
       userId
     });
-  }, [isLoaded, userId]);
+  }, []);
 
   const fetchData = async () => {
     try {
       console.log("DashboardView: Fetching transactions from", `${API_BASE}/api/transactions`);
-      const token = await getToken();
-      if (!token) {
-        throw new Error("Unable to retrieve security token from Clerk.");
-      }
+      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET || "";
 
       const res = await fetch(`${API_BASE}/api/transactions`, {
         headers: {
-          "Authorization": `Bearer ${token}`
+          "X-API-Secret": apiSecret
         }
       });
 
@@ -72,15 +67,6 @@ export function DashboardView() {
   };
 
   useEffect(() => {
-    if (!isLoaded) return;
-
-    if (!userId) {
-      console.error("DashboardView: Clerk finished loading, but no authenticated userId was found!");
-      setAuthError("No authenticated Clerk session found. Please sign in.");
-      setLoading(false);
-      return;
-    }
-
     const savedLimit = localStorage.getItem(`auraVault_${userId}_creditLimit`);
     if (savedLimit) setBaseCreditLimit(parseFloat(savedLimit));
     
@@ -103,7 +89,7 @@ export function DashboardView() {
     };
     window.addEventListener("searchTransactions", handleSearchEvent);
     return () => window.removeEventListener("searchTransactions", handleSearchEvent);
-  }, [isLoaded, userId]);
+  }, []);
 
   const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,12 +102,12 @@ export function DashboardView() {
         finalCategory = savingsSource === "balance" ? "Savings_Internal" : "Savings_External";
       }
 
-      const token = await getToken();
+      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET || "";
       await fetch(`${API_BASE}/api/transactions`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          "X-API-Secret": apiSecret
         },
         body: JSON.stringify({
           name: newName,

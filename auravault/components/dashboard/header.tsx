@@ -4,12 +4,10 @@ import { Bell, Search, AlertCircle, TrendingDown, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useAuth, UserButton } from "@clerk/nextjs";
-
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://auravault-ai.onrender.com";
 
 export function Header({ currentTab = "Dashboard" }: { currentTab?: string }) {
-  const { isLoaded, userId, getToken } = useAuth();
+  const userId = "primary_user";
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const [activeNotifications, setActiveNotifications] = useState<any[]>([]);
@@ -20,12 +18,10 @@ export function Header({ currentTab = "Dashboard" }: { currentTab?: string }) {
   const searchRef = useRef<HTMLDivElement>(null);
   const checkRealEvents = async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
-
+      const apiSecret = process.env.NEXT_PUBLIC_API_SECRET || "";
       const res = await fetch(`${API_BASE}/api/transactions`, {
         headers: {
-          "Authorization": `Bearer ${token}`
+          "X-API-Secret": apiSecret
         }
       });
 
@@ -139,14 +135,12 @@ export function Header({ currentTab = "Dashboard" }: { currentTab?: string }) {
   };
 
   useEffect(() => {
-    if (isLoaded && userId) {
-      checkRealEvents();
-      window.addEventListener("notificationsUpdated", checkRealEvents);
-      return () => {
-        window.removeEventListener("notificationsUpdated", checkRealEvents);
-      };
-    }
-  }, [isLoaded, userId]); 
+    checkRealEvents();
+    window.addEventListener("notificationsUpdated", checkRealEvents);
+    return () => {
+      window.removeEventListener("notificationsUpdated", checkRealEvents);
+    };
+  }, []); 
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -277,11 +271,14 @@ export function Header({ currentTab = "Dashboard" }: { currentTab?: string }) {
           )}
         </div>
         <div className="flex items-center gap-3 pl-4 border-l border-border">
-          <UserButton showName appearance={{
-            elements: {
-              userButtonOuterIdentifier: "text-sm font-medium text-foreground",
-            }
-          }} />
+          <div className="hidden md:block text-right">
+            <p className="text-sm font-medium text-foreground">
+              Primary User
+            </p>
+          </div>
+          <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
+            <User className="w-5 h-5" />
+          </div>
         </div>
         
       </div>
