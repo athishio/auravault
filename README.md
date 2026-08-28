@@ -2,6 +2,8 @@
 
 AuraVault AI is a secure, intelligent personal wealth and expense tracker featuring an integrated AI financial advisor powered by Google Gemini.
 
+![AuraVault Dashboard](./docs/dashboard-preview.png)
+
 ## Features
 
 - **Transaction Ledger & Dashboard**: Real-time spending tracker, categorization, and ledger management.
