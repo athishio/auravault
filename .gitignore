@@ -1,5 +1,10 @@
+node_modules/
+.next/
+.snowflake/
+.vercel/
 **/.env
 **/.env.local
-/real_two_user_verification.py
-/migrate_user.py
-/ai-backend/debug.log
+**/.env.*.local
+*.tsbuildinfo
+debug.log
+ai-backend/debug.log

@@ -181,7 +181,6 @@ export function DashboardView() {
     <>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-foreground">
-          {/* BYPASS CLERK: Hardcoded your name for the hackathon */}
           Welcome back, Athish
         </h1>
         <p className="text-muted-foreground mt-1">
