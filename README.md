@@ -117,5 +117,5 @@ Ensure you have `Node.js` (v18+), `pnpm` (v11+), and `Python` (3.12+) installed.
 
 ## Live Demo
 
-- **Hosted Application**: [Add your Vercel URL here]
-- **API Backend Service**: [Add your Render URL here]
+- **Hosted Application**: https://auravault-two.vercel.app
+- **API Backend Service**: https://auravault-backend.onrender.com
