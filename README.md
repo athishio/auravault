@@ -1,21 +1,21 @@
 # AuraVault AI
 
-AuraVault AI is a secure, intelligent personal wealth and expense tracker featuring an integrated AI financial advisor powered by Google Gemini.
+AuraVault AI is a personal wealth and expense tracker featuring an integrated AI financial advisor powered by Google Gemini.
 
 ![AuraVault Dashboard](./docs/dashboard-preview.png)
 
 ## Features
 
 - **Transaction Ledger & Dashboard**: Real-time spending tracker, categorization, and ledger management.
-- **AI Statement Parsing**: Parse PDF, CSV, or text statements using Gemini Vision to auto-extract transaction details.
-- **AI Financial Advisor**: An interactive chat widget and full-page conversational agent powered by Gemini to help analyze spending and budgeting.
+- **Statement Parsing & Rule-Based Categorization**: Extracts transaction lines from uploaded PDF, CSV, or text statements using `pdfplumber` text extraction and regex pattern matching for dates, descriptions, and amounts. Transactions are categorized automatically using keyword rules (e.g. "rent" → Housing, "salary" → Salary, "atm" → Cash).
+- **AI Financial Advisor Chat**: Conversational financial advisor powered by Google Gemini (`gemini-3.5-flash`) with live context access to your current balance, category-wise spending breakdown, and recent transactions.
 - **Visual Analytics**: Interactive charts showing expense breakdowns, monthly trends, and categories.
 
 ## Architecture
 
 AuraVault is built as a decoupled client-server application:
 - **Frontend (Next.js)**: A responsive client built with React, TypeScript, and Tailwind CSS. It communicates with the Flask backend, passing requests gated by a shared secret header (`X-API-Secret`).
-- **Backend (Flask)**: A lightweight Python REST API that manages statement parsing, stores financial history in DynamoDB, and orchestrates calls to the Google Gemini API for financial suggestions.
+- **Backend (Flask)**: A lightweight Python REST API that parses statements using `pdfplumber` and regex, applies keyword categorization rules, stores financial history in DynamoDB, and queries the Google Gemini API for financial advisor chat responses.
 
 ```mermaid
 graph TD
@@ -27,8 +27,8 @@ graph TD
 ## Tech Stack
 
 - **Frontend**: Next.js (App Router), React, TypeScript, Tailwind CSS, Radix UI, Lucide Icons, pnpm
-- **Backend**: Flask, Boto3 (DynamoDB client), Werkzeug, python-dotenv
-- **AI Engine**: Google Gemini API (`google-generativeai`)
+- **Backend**: Flask, Boto3 (DynamoDB client), pdfplumber, Werkzeug, python-dotenv
+- **AI Engine**: Google Gemini API (`google-generativeai` / `gemini-3.5-flash` for Advisor Chat)
 - **Database**: Amazon DynamoDB (indexed for query-based single-user operations)
 - **Deployment**: Vercel (Frontend), Render (Backend)
 
